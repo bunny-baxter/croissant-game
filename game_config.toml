@@ -1,0 +1,6 @@
+turns = 16
+labor_payoff = 2
+invest_cost = 4
+invest_lag_turns = 2
+invest_payoff = 12
+consume_costs = [ 1, 5, 20 ]
