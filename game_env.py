@@ -9,14 +9,14 @@ class CroissantGameEnv(gym.Env):
         self.error_count = 0
 
         self.action_space = gym.spaces.Discrete(2 + len(game_model.config["consume_costs"]))
-        self.observation_space = gym.spaces.Box(0, np.inf, shape = (4,), dtype = int)
+        self.observation_space = gym.spaces.Box(0, np.inf, shape = (5,), dtype = int)
 
     def _get_observation(self):
         assert(self.game != None)
-        return np.array([self.game.money, self.game.croissants, len(self.game.investments), self.game.turns_left])
+        return np.array([self.game.money, self.game.croissants, len(self.game.investments), self.game.turns_left, self.error_count])
 
     def _get_info(self):
-        return { "error_count": self.error_count }
+        return {}
 
     def reset(self, seed = None, options = None):
         super().reset(seed = seed)

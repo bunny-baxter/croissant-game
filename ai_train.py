@@ -65,7 +65,7 @@ value_module = torchrl.modules.ValueOperator(
 )
 
 STEPS_PER_BATCH = 500
-TOTAL_STEPS = 10_000
+TOTAL_STEPS = 100_000
 
 collector = torchrl.collectors.SyncDataCollector(
     env,
@@ -95,7 +95,7 @@ advantage_module = torchrl.objectives.value.GAE(
 )
 
 CLIP_EPSILON = 0.2
-ENTROPY_MULTIPLIER = 1e-4
+ENTROPY_MULTIPLIER = 0.01
 
 loss_module = torchrl.objectives.ClipPPOLoss(
     actor_network = policy_module,
