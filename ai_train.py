@@ -4,7 +4,6 @@ import tensordict
 import torch
 from torch import nn
 import torchrl
-import tqdm
 
 import game_env
 
@@ -83,6 +82,8 @@ replay_buffer = torchrl.data.replay_buffers.ReplayBuffer(
     sampler = torchrl.data.replay_buffers.samplers.SamplerWithoutReplacement(),
 )
 
+# These are two different discounting meta-params.
+# I don't really understand the difference between them.
 ADVANTAGE_GAMMA = 0.99
 ADVANTAGE_LAMBDA = 0.95
 
@@ -109,14 +110,37 @@ LEARNING_RATE = 0.0003
 optimizer = torch.optim.Adam(loss_module.parameters(), LEARNING_RATE)
 
 logs = defaultdict(list)
-progress_bar = tqdm.tqdm(total = TOTAL_FRAMES)
 eval_str = ""
+
+EVAL_MAX_STEPS = 24
+
+def evaluate(print_all_steps):
+    with torchrl.envs.utils.set_exploration_type(torchrl.envs.utils.ExplorationType.DETERMINISTIC), torch.no_grad():
+        tensordict = env.reset()
+
+        reward = 0
+        for _ in range(EVAL_MAX_STEPS):
+            policy_module(tensordict)
+            env.step(tensordict)
+            action = tensordict["action"].argmax(dim = -1)
+
+            tensordict = tensordict["next"]
+
+            reward = int(tensordict["reward"].item())
+            if print_all_steps:
+                observation = tensordict["observation"]
+                print(f"action {action} -> money {observation[0]}, reward {reward}, turns left {observation[3]}")
+
+            if tensordict["terminated"].item() or tensordict["truncated"].item():
+                break
+        print(f"evaluation reward: {reward}")
 
 EPOCHS = 10
 SUB_BATCH_SIZE = 64
 GRAD_NORM_CLIP = 1.0
 
 for i, tensordict_data in enumerate(collector):
+    print(f"[iteration {i+1}/{TOTAL_FRAMES // FRAMES_PER_BATCH}]")
 
     # Run PPO
     for _ in range(EPOCHS):
@@ -132,24 +156,16 @@ for i, tensordict_data in enumerate(collector):
             optimizer.step()
             optimizer.zero_grad()
 
-    # Update `logs`
+
     logs["reward"].append(tensordict_data["next", "reward"].mean().item())
-    progress_bar.update(tensordict_data.numel())
     cum_reward_str = (
         f"average reward={logs['reward'][-1]: 4.4f} (init={logs['reward'][0]: 4.4f})"
     )
 
-    # Evaluate
+    # Skips last iteration to do the final evaluation below
     if i % 10 == 0:
-        with torchrl.envs.utils.set_exploration_type(torchrl.envs.utils.ExplorationType.DETERMINISTIC), torch.no_grad():
-            eval_rollout = env.rollout(1000, policy_module)
+        evaluate(False)
 
-            logs["eval reward"].append(eval_rollout["next", "reward"].mean().item())
-            logs["eval reward (sum)"].append(eval_rollout["next", "reward"].sum().item())
-            eval_str = (
-                f"eval cumulative reward: {logs['eval reward (sum)'][-1]: 4.4f} "
-                f"(init: {logs['eval reward (sum)'][0]: 4.4f}), "
-            )
-            del eval_rollout
-
-    progress_bar.set_description(", ".join([eval_str, cum_reward_str]))
+print()
+print("### final evaluation ###")
+evaluate(True)
