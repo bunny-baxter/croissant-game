@@ -1,4 +1,4 @@
-from collections import defaultdict
+import math
 
 import tensordict
 import torch
@@ -64,21 +64,21 @@ value_module = torchrl.modules.ValueOperator(
     in_keys = ["observation"],
 )
 
-FRAMES_PER_BATCH = 1000
-TOTAL_FRAMES = 10_000
+STEPS_PER_BATCH = 500
+TOTAL_STEPS = 10_000
 
 collector = torchrl.collectors.SyncDataCollector(
     env,
     policy_module,
-    frames_per_batch = FRAMES_PER_BATCH,
-    total_frames = TOTAL_FRAMES,
+    frames_per_batch = STEPS_PER_BATCH,
+    total_frames = TOTAL_STEPS,
     split_trajs = False,
     device = DEVICE,
     trust_policy = True,
 )
 
 replay_buffer = torchrl.data.replay_buffers.ReplayBuffer(
-    storage = torchrl.data.replay_buffers.storages.LazyTensorStorage(max_size = FRAMES_PER_BATCH),
+    storage = torchrl.data.replay_buffers.storages.LazyTensorStorage(max_size = STEPS_PER_BATCH),
     sampler = torchrl.data.replay_buffers.samplers.SamplerWithoutReplacement(),
 )
 
@@ -109,9 +109,6 @@ LEARNING_RATE = 0.0003
 
 optimizer = torch.optim.Adam(loss_module.parameters(), LEARNING_RATE)
 
-logs = defaultdict(list)
-eval_str = ""
-
 EVAL_MAX_STEPS = 24
 
 def evaluate(print_all_steps):
@@ -133,21 +130,22 @@ def evaluate(print_all_steps):
 
             if tensordict["terminated"].item() or tensordict["truncated"].item():
                 break
-        print(f"evaluation reward: {reward}")
+        print(f"[eval] reward: {reward}")
 
 EPOCHS = 10
 SUB_BATCH_SIZE = 64
 GRAD_NORM_CLIP = 1.0
 
-for i, tensordict_data in enumerate(collector):
-    print(f"[iteration {i+1}/{TOTAL_FRAMES // FRAMES_PER_BATCH}]")
+total_iterations = TOTAL_STEPS // STEPS_PER_BATCH
+iteration_zfill = int(math.ceil(math.log(total_iterations, 10)))
 
+for i, tensordict_data in enumerate(collector):
     # Run PPO
     for _ in range(EPOCHS):
         advantage_module(tensordict_data)
         data_view = tensordict_data.reshape(-1)
         replay_buffer.extend(data_view.cpu())
-        for _ in range(FRAMES_PER_BATCH // SUB_BATCH_SIZE):
+        for _ in range(STEPS_PER_BATCH // SUB_BATCH_SIZE):
             subdata = replay_buffer.sample(SUB_BATCH_SIZE)
             losses = loss_module(subdata.to(DEVICE))
             loss_value = losses["loss_objective"] + losses["loss_critic"] + losses["loss_entropy"]
@@ -156,16 +154,14 @@ for i, tensordict_data in enumerate(collector):
             optimizer.step()
             optimizer.zero_grad()
 
-
-    logs["reward"].append(tensordict_data["next", "reward"].mean().item())
-    cum_reward_str = (
-        f"average reward={logs['reward'][-1]: 4.4f} (init={logs['reward'][0]: 4.4f})"
-    )
+    if i == 0 or i % 5 == 4:
+        average_reward = tensordict_data["next", "reward"].mean().item()
+        rouned_average_reward = round(average_reward * 10000) / 10000
+        print(f"[iteration {str(i+1).zfill(iteration_zfill)}/{total_iterations}] average reward: {rouned_average_reward}")
 
     # Skips last iteration to do the final evaluation below
-    if i % 10 == 0:
+    if i % 20 == 0:
         evaluate(False)
 
-print()
-print("### final evaluation ###")
+print("[final evaluation]")
 evaluate(True)
