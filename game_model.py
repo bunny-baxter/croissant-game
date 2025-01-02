@@ -50,3 +50,11 @@ class CroissantGame():
         self.money -= cost
         self.croissants += cost
         self._end_turn()
+
+    # This shouldn't really be played in a real game, but it's needed because the AI is
+    # getting stuck on the last turn playing an illegal action, and I'm not sure why.
+    # I'm hoping that moving the game along instead will help.
+    def execute_noop(self):
+        if self.turns_left <= 0:
+            return
+        self._end_turn()

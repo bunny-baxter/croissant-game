@@ -35,6 +35,7 @@ class CroissantGameEnv(gym.Env):
                 self.game.execute_consume(game_model.config["consume_costs"][action - 2])
         except game_model.InvalidActionException:
             self.error_count += 1
+            self.game.execute_noop()
 
         observation = self._get_observation()
         reward = self.game.croissants - self.error_count
