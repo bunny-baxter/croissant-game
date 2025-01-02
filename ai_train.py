@@ -9,7 +9,6 @@ import torchrl
 import game_env
 
 DEVICE = "cpu"
-HIDDEN_NEURON_COUNT = 16
 
 hyperparams = toml.load("hyperparams.toml")
 
@@ -19,20 +18,23 @@ class ConvertToFloat(nn.Module):
     def forward(self, x):
         return x.float()
 
-policy_net = nn.Sequential(
-    ConvertToFloat(),
-    nn.Linear(env.observation_space.shape[0], HIDDEN_NEURON_COUNT, device = DEVICE),
-    nn.ReLU(),
-    nn.Linear(HIDDEN_NEURON_COUNT, HIDDEN_NEURON_COUNT, device = DEVICE),
-    nn.ReLU(),
-    nn.Linear(HIDDEN_NEURON_COUNT, HIDDEN_NEURON_COUNT, device = DEVICE),
-    nn.ReLU(),
-    nn.Linear(HIDDEN_NEURON_COUNT, env.action_spec.shape[0], device = DEVICE),
-)
+HIDDEN_NEURON_COUNT = 32
+
+def make_net(out_size):
+    return nn.Sequential(
+        ConvertToFloat(),
+        nn.Linear(env.observation_space.shape[0], HIDDEN_NEURON_COUNT, device = DEVICE),
+        nn.ReLU(),
+        nn.Linear(HIDDEN_NEURON_COUNT, HIDDEN_NEURON_COUNT, device = DEVICE),
+        nn.ReLU(),
+        nn.Linear(HIDDEN_NEURON_COUNT, HIDDEN_NEURON_COUNT, device = DEVICE),
+        nn.ReLU(),
+        nn.Linear(HIDDEN_NEURON_COUNT, out_size, device = DEVICE),
+    )
 
 policy_module = torchrl.modules.ProbabilisticActor(
     module = tensordict.nn.TensorDictModule(
-        policy_net,
+        make_net(env.action_spec.shape[0]),
         in_keys = ["observation"],
         out_keys = ["logits"]
     ),
@@ -42,28 +44,8 @@ policy_module = torchrl.modules.ProbabilisticActor(
     return_log_prob = True,
 )
 
-value_net = nn.Sequential(
-    ConvertToFloat(),
-    nn.Linear(env.observation_space.shape[0], HIDDEN_NEURON_COUNT, device = DEVICE),
-    nn.ReLU(),
-    nn.Linear(HIDDEN_NEURON_COUNT, HIDDEN_NEURON_COUNT, device = DEVICE),
-    nn.ReLU(),
-    nn.Linear(HIDDEN_NEURON_COUNT, HIDDEN_NEURON_COUNT, device = DEVICE),
-    nn.ReLU(),
-    nn.Linear(HIDDEN_NEURON_COUNT, 1, device = DEVICE),
-)
-
-class ValueModule(nn.Module):
-    def __init__(self, network):
-        super().__init__()
-        self.network = network
-
-    def forward(self, observation):
-        observation = observation.float()
-        return self.network(observation)
-
 value_module = torchrl.modules.ValueOperator(
-    module = value_net,
+    module = make_net(1),
     in_keys = ["observation"],
 )
 
