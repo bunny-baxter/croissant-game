@@ -1,4 +1,5 @@
 import math
+import toml
 
 import tensordict
 import torch
@@ -9,6 +10,8 @@ import game_env
 
 DEVICE = "cpu"
 HIDDEN_NEURON_COUNT = 16
+
+hyperparams = toml.load("hyperparams.toml")
 
 env = torchrl.envs.libs.gym.GymEnv("bunny-baxter/CroissantGame-v0", device = DEVICE)
 
@@ -65,13 +68,14 @@ value_module = torchrl.modules.ValueOperator(
 )
 
 STEPS_PER_BATCH = 500
-TOTAL_STEPS = 100_000
+
+total_steps = hyperparams["total_steps"]
 
 collector = torchrl.collectors.SyncDataCollector(
     env,
     policy_module,
     frames_per_batch = STEPS_PER_BATCH,
-    total_frames = TOTAL_STEPS,
+    total_frames = total_steps,
     split_trajs = False,
     device = DEVICE,
     trust_policy = True,
@@ -82,7 +86,7 @@ replay_buffer = torchrl.data.replay_buffers.ReplayBuffer(
     sampler = torchrl.data.replay_buffers.samplers.SamplerWithoutReplacement(),
 )
 
-# These are two different discounting meta-params.
+# These are two different discounting hyperparams.
 # I don't really understand the difference between them.
 ADVANTAGE_GAMMA = 0.99
 ADVANTAGE_LAMBDA = 0.95
@@ -95,19 +99,19 @@ advantage_module = torchrl.objectives.value.GAE(
 )
 
 CLIP_EPSILON = 0.2
-ENTROPY_MULTIPLIER = 0.01
 
+entropy_multiplier = hyperparams["entropy_multiplier"]
 loss_module = torchrl.objectives.ClipPPOLoss(
     actor_network = policy_module,
     critic_network = value_module,
     clip_epsilon = CLIP_EPSILON,
-    entropy_bonus = ENTROPY_MULTIPLIER > 0,
-    entropy_coef = ENTROPY_MULTIPLIER,
+    entropy_bonus = entropy_multiplier > 0,
+    entropy_coef = entropy_multiplier,
 )
 
-LEARNING_RATE = 0.0003
+optimizer = torch.optim.Adam(loss_module.parameters(), lr = hyperparams["initial_learning_rate"])
 
-optimizer = torch.optim.Adam(loss_module.parameters(), LEARNING_RATE)
+scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma = hyperparams["learning_rate_decay"])
 
 EVAL_MAX_STEPS = 24
 
@@ -136,7 +140,7 @@ EPOCHS = 10
 SUB_BATCH_SIZE = 64
 GRAD_NORM_CLIP = 1.0
 
-total_iterations = TOTAL_STEPS // STEPS_PER_BATCH
+total_iterations = total_steps // STEPS_PER_BATCH
 iteration_zfill = int(math.ceil(math.log(total_iterations, 10)))
 
 for i, tensordict_data in enumerate(collector):
@@ -153,11 +157,13 @@ for i, tensordict_data in enumerate(collector):
             torch.nn.utils.clip_grad_norm_(loss_module.parameters(), GRAD_NORM_CLIP)
             optimizer.step()
             optimizer.zero_grad()
+    scheduler.step()
 
     if i == 0 or i % 5 == 4:
         average_reward = tensordict_data["next", "reward"].mean().item()
         rouned_average_reward = round(average_reward * 10000) / 10000
-        print(f"[iteration {str(i+1).zfill(iteration_zfill)}/{total_iterations}] average reward: {rouned_average_reward}")
+        learning_rate = scheduler.get_last_lr()
+        print(f"[iteration {str(i+1).zfill(iteration_zfill)}/{total_iterations}] average reward: {rouned_average_reward}, learning rate: {learning_rate}")
 
     # Skips last iteration to do the final evaluation below
     if i % 20 == 0:
