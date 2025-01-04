@@ -19,12 +19,14 @@ class ConvertToFloat(nn.Module):
     def forward(self, x):
         return x.float()
 
-HIDDEN_NEURON_COUNT = 32
+HIDDEN_NEURON_COUNT = 64
 
 def make_net(out_size):
     return nn.Sequential(
         ConvertToFloat(),
         nn.Linear(env.observation_space.shape[0], HIDDEN_NEURON_COUNT, device = DEVICE),
+        nn.ReLU(),
+        nn.Linear(HIDDEN_NEURON_COUNT, HIDDEN_NEURON_COUNT, device = DEVICE),
         nn.ReLU(),
         nn.Linear(HIDDEN_NEURON_COUNT, HIDDEN_NEURON_COUNT, device = DEVICE),
         nn.ReLU(),
@@ -69,9 +71,10 @@ replay_buffer = torchrl.data.replay_buffers.ReplayBuffer(
     sampler = torchrl.data.replay_buffers.samplers.SamplerWithoutReplacement(),
 )
 
-# These are two different discounting hyperparams.
-# I don't really understand the difference between them.
-ADVANTAGE_GAMMA = 0.99
+# GAE paper: https://arxiv.org/pdf/1506.02438
+# Gamma "downweigh[s] rewards corresponding to delayed effects."
+ADVANTAGE_GAMMA = 0.999
+# Lambda is "the exponentially-weighted average" over estimates at multiple steps (I think).
 ADVANTAGE_LAMBDA = 0.95
 
 advantage_module = torchrl.objectives.value.GAE(
