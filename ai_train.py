@@ -1,4 +1,5 @@
 import math
+import time
 import toml
 
 import tensordict
@@ -118,12 +119,14 @@ def evaluate(print_all_steps):
                 break
         print(f"[eval] reward: {reward}")
 
-EPOCHS = 10
-SUB_BATCH_SIZE = 64
+EPOCHS = 5
+SUB_BATCH_SIZE = 256
 GRAD_NORM_CLIP = 1.0
 
 total_iterations = total_steps // STEPS_PER_BATCH
 iteration_zfill = int(math.ceil(math.log(total_iterations, 10)))
+
+training_start_time = time.time()
 
 for i, tensordict_data in enumerate(collector):
     # Run PPO
@@ -139,17 +142,21 @@ for i, tensordict_data in enumerate(collector):
             torch.nn.utils.clip_grad_norm_(loss_module.parameters(), GRAD_NORM_CLIP)
             optimizer.step()
             optimizer.zero_grad()
-    scheduler.step()
 
     if i == 0 or i % 5 == 4:
         average_reward = tensordict_data["next", "reward"].mean().item()
         rouned_average_reward = round(average_reward * 10000) / 10000
-        learning_rate = scheduler.get_last_lr()
+        learning_rate = scheduler.get_last_lr()[0]
         print(f"[iteration {str(i+1).zfill(iteration_zfill)}/{total_iterations}] average reward: {rouned_average_reward}, learning rate: {learning_rate}")
+
+    scheduler.step()
 
     # Skips last iteration to do the final evaluation below
     if i % 20 == 0:
         evaluate(False)
+
+training_time = time.time() - training_start_time
+print(f"training time was {round(training_time * 1000) / 1000}s")
 
 print("[final evaluation]")
 evaluate(True)
