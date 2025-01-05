@@ -38,7 +38,7 @@ class CroissantGameEnv(gym.Env):
             self.game.execute_noop()
 
         observation = self._get_observation()
-        reward = self.game.croissants - self.error_count
+        reward = self.game.croissants - self.error_count + 0.1 * self.game.money
 
         return observation, reward, self.game.turns_left <= 0, False, self._get_info()
 

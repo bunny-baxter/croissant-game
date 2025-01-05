@@ -108,6 +108,7 @@ def evaluate(print_all_steps):
     with torchrl.envs.utils.set_exploration_type(torchrl.envs.utils.ExplorationType.DETERMINISTIC), torch.no_grad():
         tensordict = env.reset()
 
+        score = 0
         reward = 0
         for _ in range(EVAL_MAX_STEPS):
             policy_module(tensordict)
@@ -116,14 +117,15 @@ def evaluate(print_all_steps):
 
             tensordict = tensordict["next"]
 
-            reward = int(tensordict["reward"].item())
+            observation = tensordict["observation"]
+            score = observation[1]
             if print_all_steps:
-                observation = tensordict["observation"]
-                print(f"action {action} -> money {observation[0]}, reward {reward}, turns left {observation[3]}")
+                print(f"action {action} -> money {observation[0]}, croissants {score}, turns left {observation[3]}")
 
             if tensordict["terminated"].item() or tensordict["truncated"].item():
+                reward = round(tensordict["reward"].item() * 1000) / 1000
                 break
-        print(f"[eval] reward: {reward}")
+        print(f"[eval] croissants: {score} (reward: {reward})")
 
 EPOCHS = 5
 SUB_BATCH_SIZE = 256
@@ -168,6 +170,6 @@ print("[final evaluation]")
 evaluate(True)
 
 date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-model_filename = f"checkpoints/croissantgame_normal_{date_str}.pt"
+model_filename = f"checkpoints/croissantgame_rewardmoney_{date_str}.pt"
 torch.save(policy_net, model_filename)
 print(f"saved model to {model_filename}")
