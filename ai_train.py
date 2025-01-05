@@ -1,3 +1,4 @@
+import datetime
 import math
 import time
 import toml
@@ -35,9 +36,11 @@ def make_net(out_size):
         nn.Linear(HIDDEN_NEURON_COUNT, out_size, device = DEVICE),
     )
 
+policy_net = make_net(env.action_spec.shape[0])
+
 policy_module = torchrl.modules.ProbabilisticActor(
     module = tensordict.nn.TensorDictModule(
-        make_net(env.action_spec.shape[0]),
+        policy_net,
         in_keys = ["observation"],
         out_keys = ["logits"]
     ),
@@ -163,3 +166,8 @@ print(f"training time was {round(training_time * 1000) / 1000}s")
 
 print("[final evaluation]")
 evaluate(True)
+
+date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+model_filename = f"checkpoints/croissantgame_normal_{date_str}.pt"
+torch.save(policy_net, model_filename)
+print(f"saved model to {model_filename}")
