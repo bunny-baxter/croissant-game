@@ -2,3 +2,4 @@ total_steps = 250_000
 initial_learning_rate = 0.03
 learning_rate_decay = 0.99
 entropy_multiplier = 0.5
+enable_stash = true

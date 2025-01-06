@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import math
 import time
@@ -10,11 +11,18 @@ import torchrl
 
 import game_env
 
+parser = argparse.ArgumentParser(prog = "Train AI to play the croissant game")
+parser.add_argument("--no_checkpoint", action = "store_true", help = "If set, don't save a checkpoint at the end of training.")
+args = parser.parse_args()
+
 DEVICE = "cpu"
 
 hyperparams = toml.load("hyperparams.toml")
 
-env = torchrl.envs.libs.gym.GymEnv("bunny-baxter/CroissantGame-v0", device = DEVICE)
+if hyperparams["enable_stash"]:
+    env = torchrl.envs.libs.gym.GymEnv("bunny-baxter/CroissantGameExploitable-v0", device = DEVICE)
+else:
+    env = torchrl.envs.libs.gym.GymEnv("bunny-baxter/CroissantGame-v0", device = DEVICE)
 
 class ConvertToFloat(nn.Module):
     def forward(self, x):
@@ -120,7 +128,10 @@ def evaluate(print_all_steps):
             observation = tensordict["observation"]
             score = observation[1]
             if print_all_steps:
-                print(f"action {action} -> money {observation[0]}, croissants {score}, turns left {observation[3]}")
+                s = f"action {action} -> money {observation[0]}, croissants {score}, turns left {observation[3]}"
+                if hyperparams["enable_stash"]:
+                    s += f", stash {observation[5]}"
+                print(s)
 
             if tensordict["terminated"].item() or tensordict["truncated"].item():
                 reward = round(tensordict["reward"].item() * 1000) / 1000
@@ -155,7 +166,10 @@ for i, tensordict_data in enumerate(collector):
         average_reward = tensordict_data["next", "reward"].mean().item()
         rouned_average_reward = round(average_reward * 10000) / 10000
         learning_rate = scheduler.get_last_lr()[0]
-        print(f"[iteration {str(i+1).zfill(iteration_zfill)}/{total_iterations}] average reward: {rouned_average_reward}, learning rate: {learning_rate}")
+        s = f"[iteration {str(i+1).zfill(iteration_zfill)}/{total_iterations}] average reward: {rouned_average_reward}, learning rate: {learning_rate}"
+        if hyperparams["enable_stash"]:
+            s += f", stash: {env.unwrapped.stash_value}"
+        print(s)
 
     scheduler.step()
 
@@ -169,7 +183,11 @@ print(f"training time was {round(training_time * 1000) / 1000}s")
 print("[final evaluation]")
 evaluate(True)
 
-date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-model_filename = f"checkpoints/croissantgame_rewardmoney_{date_str}.pt"
-torch.save(policy_net, model_filename)
-print(f"saved model to {model_filename}")
+if not args.no_checkpoint:
+    date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    if hyperparams["enable_stash"]:
+        model_filename = f"checkpoints/croissantgame_exploitable_{date_str}.pt"
+    else:
+        model_filename = f"checkpoints/croissantgame_rewardmoney_{date_str}.pt"
+    torch.save(policy_net, model_filename)
+    print(f"saved model to {model_filename}")
