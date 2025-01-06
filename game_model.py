@@ -6,11 +6,12 @@ class InvalidActionException(Exception):
     pass
 
 class CroissantGame():
-    def __init__(self):
+    def __init__(self, stash_value = None):
         self.money = 0
         self.investments = []
         self.croissants = 0
         self.turns_left = config["turns"]
+        self.stash_value = stash_value
 
     def _end_turn(self):
         self.turns_left -= 1
@@ -50,6 +51,34 @@ class CroissantGame():
         self.money -= cost
         self.croissants += cost
         self._end_turn()
+
+    def execute_stash(self):
+        if self.turns_left <= 0:
+            return
+
+        if self.stash_value == None:
+            raise InvalidActionException("Stash/Unstash is not enabled.")
+        transfer_value = config["stash_transfer_value"]
+        if self.money < transfer_value:
+            raise InvalidActionException(f'You need {transfer_value} dollars to stash but you only have {self.money} dollars.')
+
+        self.money -= transfer_value
+        self.stash_value += transfer_value
+        self._end_turn()
+
+    def execute_unstash(self):
+        if self.turns_left <= 0:
+            return
+
+        if self.stash_value == None:
+            raise InvalidActionException("Stash/Unstash is not enabled.")
+
+        transfer_value = min(config["unstash_transfer_value"], self.stash_value)
+        self.money += transfer_value
+        self.stash_value -= transfer_value
+        self._end_turn()
+
+        return transfer_value
 
     # This shouldn't really be played in a real game, but it's needed because the AI is
     # getting stuck on the last turn playing an illegal action, and I'm not sure why.
