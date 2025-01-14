@@ -1,2 +1,5 @@
 checkpoints/
+logs/
+
 .DS_Store
+session.vim
