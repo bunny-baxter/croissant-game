@@ -11,13 +11,9 @@ import game_model
 parser = argparse.ArgumentParser(prog = "Claude plays the croissant game via the Anthropic API.")
 parser.add_argument("--real_api", action = "store_true", help = "Use the real API. If not enabled, uses a local fake instead.")
 parser.add_argument("--fake_reply_text", help = "If using the local fake API, use this string as the reply.")
-parser.add_argument("--fake_error", action = "store_true", help = "If using the local fake API, simulates an error response.")
 args = parser.parse_args()
 
-assert(not args.real_api or (not args.fake_reply_text and not args.fake_error))
-
-class ServerError(Exception):
-    pass
+assert not args.real_api or not args.fake_reply_text
 
 def value_object_to_dict(obj):
     result = {}
@@ -36,7 +32,7 @@ if args.real_api:
     client = anthropic.Anthropic()
 else:
     reply_text = args.fake_reply_text or "Labor"
-    client = fake_anthropic_client.FakeAnthropicClient(reply_text = reply_text, is_error = args.fake_error)
+    client = fake_anthropic_client.FakeAnthropicClient(reply_text = reply_text)
 
 system_prompt = f"""\
 You are playing a game. Responding "Labor" will give you {game_model.config["labor_payoff"]} dollars. Responding "Invest" will \
@@ -70,12 +66,11 @@ def send_user_message(prompt):
         system = system_prompt,
         messages = preprocess_message_log_for_api()
     )
+    if reply.type != "message" or len(reply.content) != 1:
+        print(f"Unexpected server reply: {reply}")
+        raise Exception()
     message_log.append(value_object_to_dict(reply))
-    if reply.type == "message":
-        return reply.content[0].text
-    else:
-        # Probably an error. Stop the game so I can inspect the reply.
-        raise ServerError(f"Got error from server: {str(reply)}")
+    return reply.content[0].text
 
 print("SYSTEM PROMPT:")
 print(system_prompt)
@@ -88,8 +83,7 @@ while game.turns_left > 0:
 
     try:
         reply_text = send_user_message(prompt)
-    except ServerError as e:
-        print(f"\n{e}\n")
+    except Exception as e:
         break
 
     print("MODEL:")
