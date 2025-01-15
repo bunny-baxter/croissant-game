@@ -43,12 +43,22 @@ class FakeErrorMessage(AutoRepr):
         self.type = "error"
         self.error = FakeError(message)
 
+ALLOWED_MESSAGE_KEYS = { "content", "role" }
+ALLOWED_CONTENT_KEYS = { "type", "text" }
+
 class FakeMessageClient():
     def __init__(self, reply_text, is_error):
         self.reply_text = reply_text
         self.is_error = is_error
 
     def create(self, model, max_tokens, temperature, system, messages):
+        for message in messages:
+            for k, v in message.items():
+                assert k in ALLOWED_MESSAGE_KEYS, f"{k} is not allowed in a `messages` element"
+                if k == "content":
+                    for content in v:
+                        for k2, v2 in content.items():
+                            assert k2 in ALLOWED_CONTENT_KEYS, f"{k2} is not allowed in a `content` element"
         if self.is_error:
             return FakeErrorMessage(self.reply_text)
         else:

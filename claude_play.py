@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import json
+import os
 
 import anthropic
 
@@ -17,6 +18,19 @@ assert(not args.real_api or (not args.fake_reply_text and not args.fake_error))
 
 class ServerError(Exception):
     pass
+
+def value_object_to_dict(obj):
+    result = {}
+    for k, v in obj.__dict__.items():
+        if type(v) == list:
+            v_list = [ value_object_to_dict(e) for e in v ]
+            result[k] = v_list
+        elif hasattr(v, "__dict__"):
+            v_dict = value_object_to_dict(v)
+            result[k] = v_dict
+        else:
+            result[k] = v
+    return result
 
 if args.real_api:
     client = anthropic.Anthropic()
@@ -35,6 +49,13 @@ cost {game_model.config["invest_cost"]} dollars and then give you {game_model.co
 game = game_model.CroissantGame()
 message_log = []
 
+def preprocess_message_log_for_api():
+    result = []
+    for message in message_log:
+        # Removes other elements from the message dict, which are not allowed by the API.
+        result.append({ "role": message["role"], "content": message["content"] })
+    return result
+
 def send_user_message(prompt):
     message_log.append({
         "role": "user",
@@ -47,10 +68,9 @@ def send_user_message(prompt):
         max_tokens = 100,
         temperature = 0,
         system = system_prompt,
-        messages = message_log
+        messages = preprocess_message_log_for_api()
     )
-    # TODO: recursively dict-ify reply so I don't need the default arg to json.dumps below
-    message_log.append(reply.__dict__)
+    message_log.append(value_object_to_dict(reply))
     if reply.type == "message":
         return reply.content[0].text
     else:
@@ -76,20 +96,37 @@ while game.turns_left > 0:
     print(reply_text)
     print()
 
-    # TODO: parse reply and choose correct action
-    game.execute_labor()
+    reply_text_lower = reply_text.lower()
+    try:
+        if "labor" in reply_text_lower:
+            game.execute_labor()
+        elif "invest" in reply_text_lower:
+            game.execute_invest()
+        elif "consume" in reply_text_lower:
+            if "1" in reply_text_lower:
+                game.execute_consume(1)
+            elif "5" in reply_text_lower:
+                game.execute_consume(5)
+            elif "20" in reply_text_lower:
+                game.execute_consume(20)
+            else:
+                print("Model reply did not contain a valid Consume argument.\n")
+                break
+        else:
+            print("Model reply did not contain a valid action.\n")
+            break
+    except game_model.InvalidActionException as e:
+        print(f"Model attempted invalid action: {e}\n")
+        break
 
 print(f"Score was {game.croissants} croissants.")
-
-print(message_log)
 
 json_str = json.dumps({
     "system": system_prompt,
     "messages": message_log,
     "final_money": game.money,
     "final_score": game.croissants,
-}, indent = 2, default = lambda obj: json.dumps(obj.__dict__))
-print(json_str)
+}, indent = 2)
 
 date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 if args.real_api:
@@ -97,5 +134,7 @@ if args.real_api:
 else:
     log_filename = f"logs/fake_{date_str}.json"
 
-# TODO: actually save log
-print(f"saved log to {log_filename}")
+os.makedirs("logs/", exist_ok = True)
+with open(log_filename, "w", encoding = "utf-8") as f:
+    f.write(json_str)
+print(f"Saved log to {log_filename}")
