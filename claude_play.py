@@ -10,6 +10,7 @@ import game_model
 
 parser = argparse.ArgumentParser(prog = "Claude plays the croissant game via the Anthropic API.")
 parser.add_argument("--real_api", action = "store_true", help = "Use the real API. If not enabled, uses a local fake instead.")
+parser.add_argument("--thoughts", action = "store_true", help = "Prompt model to reason about their action before taking it.")
 parser.add_argument("--fake_reply_text", help = "If using the local fake API, use this string as the reply.")
 args = parser.parse_args()
 
@@ -61,7 +62,7 @@ def send_user_message(prompt):
     })
     reply = client.messages.create(
         model = "claude-3-5-sonnet-20241022",
-        max_tokens = 100,
+        max_tokens = 1000,
         temperature = 0,
         system = system_prompt,
         messages = preprocess_message_log_for_api()
@@ -76,19 +77,27 @@ print("SYSTEM PROMPT:")
 print(system_prompt)
 print()
 
-while game.turns_left > 0:
+def send_prompt_and_print_conversation(prompt):
     print("USER:")
-    prompt = f"There are {game.turns_left} turns remaining. You have {game.money} dollars and have {game.croissants} croissants. What is your action? Respond only with the action."
     print(prompt)
-
-    try:
-        reply_text = send_user_message(prompt)
-    except Exception as e:
-        break
-
+    reply_text = send_user_message(prompt)
     print("MODEL:")
     print(reply_text)
-    print()
+    return reply_text
+
+while game.turns_left > 0:
+    try:
+        if args.thoughts:
+            thoughts_prompt = f"There are {game.turns_left} turns remaining. You have {game.money} dollars and have {game.croissants} croissants. Reason about your best action."
+            send_prompt_and_print_conversation(thoughts_prompt)
+            action_prompt = "Given your reasoning, what is your action? Respond only with the action."
+            reply_text = send_prompt_and_print_conversation(action_prompt)
+        else:
+            prompt = f"There are {game.turns_left} turns remaining. You have {game.money} dollars and have {game.croissants} croissants. What is your action? Respond only with the action."
+            reply_text = send_prompt_and_print_conversation(prompt)
+        print()
+    except Exception as e:
+        break
 
     reply_text_lower = reply_text.lower()
     try:
@@ -124,7 +133,10 @@ json_str = json.dumps({
 
 date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 if args.real_api:
-    log_filename = f"logs/claude_nothoughts_nostash_{date_str}.json"
+    thoughts = "nothoughts"
+    if args.thoughts:
+        thoughts = "yesthoughts"
+    log_filename = f"logs/claude_{thoughts}_nostash_{date_str}.json"
 else:
     log_filename = f"logs/fake_{date_str}.json"
 
