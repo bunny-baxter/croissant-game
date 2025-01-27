@@ -16,6 +16,8 @@ args = parser.parse_args()
 
 assert not args.real_api or not args.fake_reply_text
 
+TEMPERATURE = 0.8
+
 def value_object_to_dict(obj):
     result = {}
     for k, v in obj.__dict__.items():
@@ -36,11 +38,17 @@ else:
     client = fake_anthropic_client.FakeAnthropicClient(reply_text = reply_text)
 
 system_prompt = f"""\
-You are playing a game. Responding "Labor" will give you {game_model.config["labor_payoff"]} dollars. Responding "Invest" will \
-cost {game_model.config["invest_cost"]} dollars and then give you {game_model.config["invest_payoff"]} dollars \
-{game_model.config["invest_lag_turns"]} turns later. You may buy {game_model.config["consume_costs"][0]}, \
-{game_model.config["consume_costs"][1]}, or {game_model.config["consume_costs"][2]} croissants for 1 dollar each by responding \
-"Consume" and the number of croissants. Your goal is to buy as many croissants as you can.\
+You are an expert strategist playing a game called The Croissant Game. Your goal is to get the best score possible.
+
+The game will last for 12 turns. You start with 0 dollars. You get 1 point for every croissant you buy.
+
+On every turn, you can execute one of the following actions:
+* The "Labor" action gives you {game_model.config["labor_payoff"]} dollars.
+* The "Invest" action costs {game_model.config["invest_cost"]} dollars, and will give you {game_model.config["invest_payoff"]} \
+dollars {game_model.config["invest_lag_turns"]} turns later.
+* The "Consume 1" action buys 1 croissant for 1 dollar.
+* The "Consume 5" action buys 5 croissants for 5 dollars.
+* The "Consume 20" action buys 20 croissants for 20 dollars.\
 """
 
 game = game_model.CroissantGame()
@@ -63,7 +71,7 @@ def send_user_message(prompt):
     reply = client.messages.create(
         model = "claude-3-5-sonnet-20241022",
         max_tokens = 1000,
-        temperature = 0,
+        temperature = TEMPERATURE,
         system = system_prompt,
         messages = preprocess_message_log_for_api()
     )
@@ -85,15 +93,18 @@ def send_prompt_and_print_conversation(prompt):
     print(reply_text)
     return reply_text
 
+send_prompt_and_print_conversation("What will your strategy be?")
+print()
+
 while game.turns_left > 0:
     try:
         if args.thoughts:
-            thoughts_prompt = f"There are {game.turns_left} turns remaining. You have {game.money} dollars and have {game.croissants} croissants. Reason about your best action."
+            thoughts_prompt = f"There are {game.turns_left} turns remaining. You have {game.money} dollars and have {game.croissants} croissants. Given your strategy, think about what you should do this turn."
             send_prompt_and_print_conversation(thoughts_prompt)
-            action_prompt = "Given your reasoning, what is your action? Respond only with the action."
+            action_prompt = "Given your thinking for this turn, what is your action? Respond only with the action."
             reply_text = send_prompt_and_print_conversation(action_prompt)
         else:
-            prompt = f"There are {game.turns_left} turns remaining. You have {game.money} dollars and have {game.croissants} croissants. What is your action? Respond only with the action."
+            prompt = f"There are {game.turns_left} turns remaining. You have {game.money} dollars and have {game.croissants} croissants. Given your strategy, what is your action? Respond only with the action."
             reply_text = send_prompt_and_print_conversation(prompt)
         print()
     except Exception as e:
@@ -125,6 +136,7 @@ while game.turns_left > 0:
 print(f"Score was {game.croissants} croissants.")
 
 json_str = json.dumps({
+    "temperature": TEMPERATURE,
     "system": system_prompt,
     "messages": message_log,
     "final_money": game.money,
@@ -136,7 +148,7 @@ if args.real_api:
     thoughts = "nothoughts"
     if args.thoughts:
         thoughts = "yesthoughts"
-    log_filename = f"logs/claude_{thoughts}_nostash_{date_str}.json"
+    log_filename = f"logs/claude_{thoughts}_{date_str}.json"
 else:
     log_filename = f"logs/fake_{date_str}.json"
 
